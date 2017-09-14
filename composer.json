@@ -1,0 +1,39 @@
+{
+    "name": "futuretek/yii2-composer",
+    "description": "The composer plugin for Yii extension installer",
+    "keywords": [
+        "yii2",
+        "composer",
+        "extension installer"
+    ],
+    "type": "composer-plugin",
+    "license": "Apache-2.0",
+    "homepage": "http://www.futuretek.cz/",
+    "authors": [
+        {
+            "name": "Lukas Cerny",
+            "email": "lukas.cerny@futuretek.cz",
+            "homepage": "http://www.futuretek.cz",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/lukascernydis/ext-yii2-composer/issues",
+        "wiki": "https://github.com/lukascernydis/ext-yii2-composer/wiki",
+        "source": "https://github.com/lukascernydis/ext-yii2-composer"
+    },
+    "require": {
+        "composer-plugin-api": "^1.0.0"
+    },
+    "replace": {
+        "yiisoft/yii2-composer": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "futuretek\\composer\\": ""
+        }
+    },
+    "extra": {
+        "class": "futuretek\\composer\\Plugin"
+    }
+}
