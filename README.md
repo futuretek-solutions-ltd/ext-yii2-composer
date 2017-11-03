@@ -9,7 +9,7 @@ distributed as composer packages.
 Usage
 -----
 
-To use Yii 2 composer installer, simply set `type` to be `yii2-extension` in your `composer.json`,
+To use Yii 2 composer installer, simply set the package `type` to be `yii2-extension` in your `composer.json`,
 like the following:
 
 ```json
@@ -35,10 +35,11 @@ the Yii 2 application is responding to a request. For example,
 }
 ```
 
-The `Installer` class also implements a static method `setPermission()` that can be called after
-a Yii 2 projected is installed, through the `post-create-project-cmd` composer script.
-The method will set specified directories or files to be writable or executable, depending on
-the corresponding parameters set in the `extra` section of the `composer.json` file.
+The `Installer` class also implements a static method `postCreateProject()` that can be called after
+a Yii 2 project is created, through the `post-create-project-cmd` composer script.
+A similar method exists for running tasks after each `composer install` call, which sis `postInstall()`.
+These methods allow to run other `Installer` class methods like `setPermission()` or `generateCookieValidationKey()`, 
+depending on the corresponding parameters set in the `extra` section of the `composer.json` file.
 For example,
 
 ```json
@@ -48,17 +49,35 @@ For example,
     ...
     "scripts": {
         "post-create-project-cmd": [
-            "futuretek\\composer\\Installer::setPermission"
+            "futuretek\\composer\\Installer::postCreateProject"
+        ],
+        "post-install-cmd": [
+            "futuretek\\composer\\Installer::postInstall"
         ]
     },
     "extra": {
-        "writable": [
-            "runtime",
-            "web/assets"
-        ],
-        "executable": [
-            "yii"
-        ]
+        "futuretek\\composer\\Installer::postCreateProject": {
+            "setPermission": [
+                {
+                    "runtime": "0777",
+                    "web/assets": "0777",
+                    "yii": "0755"
+                }
+            ]
+        },
+        "futuretek\\composer\\Installer::postInstall": {
+            "copyFiles": [
+                {
+                    "config/templates/console-local.php": "config/console-local.php",
+                    "config/templates/web-local.php": "config/web-local.php",
+                    "config/templates/db-local.php": "config/db-local.php",
+                    "config/templates/cache.json": ["runtime/cache.json", true]
+                }
+            ],
+            "generateCookieValidationKey": [
+                "config/web-local.php"
+            ]
+        }
     }
 }
 ```

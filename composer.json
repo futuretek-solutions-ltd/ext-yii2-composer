@@ -25,6 +25,9 @@
     "require": {
         "composer-plugin-api": "^1.0.0"
     },
+    "require-dev": {
+        "composer/composer": "^1.0"
+    },
     "replace": {
         "yiisoft/yii2-composer": "*"
     },
