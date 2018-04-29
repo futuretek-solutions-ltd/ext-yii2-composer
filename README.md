@@ -16,7 +16,7 @@ like the following:
 {
     "type": "yii2-extension",
     "require": {
-        "yiisoft/yii2": "*"
+        "yiisoft/yii2": "~2.0.0"
     },
     ...
 }
