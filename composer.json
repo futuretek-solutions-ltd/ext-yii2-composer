@@ -23,10 +23,10 @@
         "source": "https://github.com/lukascernydis/ext-yii2-composer"
     },
     "require": {
-        "composer-plugin-api": "^1.0.0"
+        "composer-plugin-api": "^1.0 | ^2.0"
     },
     "require-dev": {
-        "composer/composer": "^1.0"
+        "composer/composer": "^1.0 | ^2.0"
     },
     "replace": {
         "yiisoft/yii2-composer": "*"

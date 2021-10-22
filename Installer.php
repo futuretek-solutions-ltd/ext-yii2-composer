@@ -2,10 +2,12 @@
 
 namespace futuretek\composer;
 
+use Composer\EventDispatcher\Event;
 use Composer\Installer\LibraryInstaller;
 use Composer\Package\PackageInterface;
 use Composer\Repository\InstalledRepositoryInterface;
 use Composer\Util\Filesystem;
+use React\Promise\PromiseInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 
@@ -35,16 +37,28 @@ class Installer extends LibraryInstaller
      */
     public function install(InstalledRepositoryInterface $repo, PackageInterface $package)
     {
+        $afterInstall = function () use ($package) {
+            // add the package to yiisoft/extensions.php
+            $this->addPackage($package);
+            $this->addPackageTranslation($package);
+            $this->addPackageConfig($package);
+
+            // ensure the yii2-dev package also provides Yii.php in the same place as yii2 does
+            if ($package->getName() === 'yiisoft/yii2-dev') {
+                $this->linkBaseYiiFiles();
+            }
+        };
+
         // install the package the normal composer way
-        parent::install($repo, $package);
-        // add the package to yiisoft/extensions.php
-        $this->addPackage($package);
-        $this->addPackageTranslation($package);
-        $this->addPackageConfig($package);
-        // ensure the yii2-dev package also provides Yii.php in the same place as yii2 does
-        if ($package->getName() == 'yiisoft/yii2-dev') {
-            $this->linkBaseYiiFiles();
+        $promise = parent::install($repo, $package);
+
+        // Composer v2 might return a promise here
+        if ($promise instanceof PromiseInterface) {
+            return $promise->then($afterInstall);
         }
+
+        // If not, execute the code right away as parent::install executed synchronously (composer v1, or v2 without async)
+        $afterInstall();
     }
 
     /**
@@ -52,17 +66,31 @@ class Installer extends LibraryInstaller
      */
     public function update(InstalledRepositoryInterface $repo, PackageInterface $initial, PackageInterface $target)
     {
+        $afterUpdate = function () use ($initial, $target) {
+            $this->removePackage($initial);
+            $this->addPackage($target);
+            $this->addPackageTranslation($target);
+            $this->addPackageConfig($target);
+
+            // ensure the yii2-dev package also provides Yii.php in the same place as yii2 does
+            if ($initial->getName() === 'yiisoft/yii2-dev') {
+                $this->linkBaseYiiFiles();
+            }
+        };
+
         $this->removePackageConfig($target);
         $this->removePackageTranslation($target);
-        parent::update($repo, $initial, $target);
-        $this->removePackage($initial);
-        $this->addPackage($target);
-        $this->addPackageTranslation($target);
-        $this->addPackageConfig($target);
-        // ensure the yii2-dev package also provides Yii.php in the same place as yii2 does
-        if ($initial->getName() === 'yiisoft/yii2-dev') {
-            $this->linkBaseYiiFiles();
+
+        // update the package the normal composer way
+        $promise = parent::update($repo, $initial, $target);
+
+        // Composer v2 might return a promise here
+        if ($promise instanceof PromiseInterface) {
+            return $promise->then($afterUpdate);
         }
+
+        // If not, execute the code right away as parent::update executed synchronously (composer v1, or v2 without async)
+        $afterUpdate();
     }
 
     /**
@@ -70,16 +98,28 @@ class Installer extends LibraryInstaller
      */
     public function uninstall(InstalledRepositoryInterface $repo, PackageInterface $package)
     {
+        $afterUninstall = function () use ($package) {
+            // remove the package from yiisoft/extensions.php
+            $this->removePackage($package);
+            // remove links for Yii.php
+            if ($package->getName() === 'yiisoft/yii2-dev') {
+                $this->removeBaseYiiFiles();
+            }
+        };
+
         $this->removePackageConfig($package);
         $this->removePackageTranslation($package);
+
         // uninstall the package the normal composer way
-        parent::uninstall($repo, $package);
-        // remove the package from yiisoft/extensions.php
-        $this->removePackage($package);
-        // remove links for Yii.php
-        if ($package->getName() === 'yiisoft/yii2-dev') {
-            $this->removeBaseYiiFiles();
+        $promise = parent::uninstall($repo, $package);
+
+        // Composer v2 might return a promise here
+        if ($promise instanceof PromiseInterface) {
+            return $promise->then($afterUninstall);
         }
+
+        // If not, execute the code right away as parent::uninstall executed synchronously (composer v1, or v2 without async)
+        $afterUninstall();
     }
 
     protected function addPackage(PackageInterface $package)
@@ -278,7 +318,8 @@ class Installer extends LibraryInstaller
         }
         // invalidate opcache of extensions.php if exists
         if (function_exists('opcache_invalidate')) {
-            opcache_invalidate($file, true);
+            /** @noinspection PhpComposerExtensionStubsInspection */
+            @opcache_invalidate($file, true);
         }
         $extensions = require $file;
 
@@ -303,13 +344,15 @@ class Installer extends LibraryInstaller
     {
         $file = $this->vendorDir . '/' . static::EXTENSION_FILE;
         if (!file_exists(dirname($file))) {
+            /** @noinspection MkdirRaceConditionInspection */
             mkdir(dirname($file), 0777, true);
         }
         $array = str_replace("'<vendor-dir>", '$vendorDir . \'', var_export($extensions, true));
         file_put_contents($file, "<?php\n\n\$vendorDir = dirname(__DIR__);\n\nreturn $array;\n");
         // invalidate opcache of extensions.php if exists
         if (function_exists('opcache_invalidate')) {
-            opcache_invalidate($file, true);
+            /** @noinspection PhpComposerExtensionStubsInspection */
+            @opcache_invalidate($file, true);
         }
     }
 
@@ -321,23 +364,24 @@ class Installer extends LibraryInstaller
 
         // invalidate opcache
         if (function_exists('opcache_invalidate')) {
-            opcache_invalidate($file, true);
+            /** @noinspection PhpComposerExtensionStubsInspection */
+            @opcache_invalidate($file, true);
         }
 
-        $data = require $file;
-
-        return $data;
+        return require $file;
     }
 
     protected function saveConfigFile($file, array $data)
     {
         if (!file_exists(dirname($file))) {
+            /** @noinspection MkdirRaceConditionInspection */
             mkdir(dirname($file), 0777, true);
         }
         file_put_contents($file, "<?php\n\n/* Auto generated by Composer FTS plugin */\n\nreturn " . var_export($data, true) . ";\n");
         // invalidate opcache of extensions.php if exists
         if (function_exists('opcache_invalidate')) {
-            opcache_invalidate($file, true);
+            /** @noinspection PhpComposerExtensionStubsInspection */
+            @opcache_invalidate($file, true);
         }
     }
 
@@ -345,6 +389,7 @@ class Installer extends LibraryInstaller
     {
         $yiiDir = $this->vendorDir . '/yiisoft/yii2';
         if (!file_exists($yiiDir)) {
+            /** @noinspection MkdirRaceConditionInspection */
             mkdir($yiiDir, 0777, true);
         }
         foreach (['Yii.php', 'BaseYii.php', 'classes.php'] as $file) {
@@ -430,7 +475,7 @@ EOF
             if (is_dir($path) || is_file($path)) {
                 try {
                     if (chmod($path, octdec($permission))) {
-                echo "done.\n";
+                        echo "done.\n";
                     }
                 } catch (\Exception $e) {
                     echo $e->getMessage() . "\n";
@@ -453,10 +498,10 @@ EOF
             if (is_file($config)) {
                 $content = preg_replace('/(("|\')cookieValidationKey("|\')\s*=>\s*)(""|\'\')/', "\\1'$key'", file_get_contents($config), -1, $count);
                 if ($count > 0) {
-                file_put_contents($config, $content);
+                    file_put_contents($config, $content);
+                }
             }
         }
-    }
     }
 
     protected static function generateRandomString()
@@ -465,7 +510,10 @@ EOF
             throw new \Exception('The OpenSSL PHP extension is required by Yii2.');
         }
         $length = 32;
+        /** @noinspection CryptographicallySecureRandomnessInspection */
+        /** @noinspection PhpComposerExtensionStubsInspection */
         $bytes = openssl_random_pseudo_bytes($length);
+
         return strtr(substr(base64_encode($bytes), 0, $length), '+/=', '_-.');
     }
 
@@ -481,7 +529,7 @@ EOF
     {
         foreach ($paths as $source => $target) {
             // handle file target as array [path, overwrite]
-            $target = (array) $target;
+            $target = (array)$target;
             echo "Copying file $source to $target[0] - ";
 
             if (!is_file($source)) {
@@ -489,15 +537,18 @@ EOF
                 continue;
             }
 
-            if (is_file($target[0]) && empty($target[1])) {
+            if (empty($target[1]) && is_file($target[0])) {
                 echo "target file exists - skip.\n";
                 continue;
-            } elseif (is_file($target[0]) && !empty($target[1])) {
+            }
+
+            if (!empty($target[1]) && is_file($target[0])) {
                 echo "target file exists - overwrite - ";
             }
 
             try {
                 if (!is_dir(dirname($target[0]))) {
+                    /** @noinspection MkdirRaceConditionInspection */
                     mkdir(dirname($target[0]), 0777, true);
                 }
                 if (copy($source, $target[0])) {
@@ -529,7 +580,7 @@ EOF
 
     public static function delTree($dir)
     {
-        $files = array_diff(scandir($dir), array('.', '..'));
+        $files = array_diff(scandir($dir), ['.', '..']);
         foreach ($files as $file) {
             (is_dir("$dir/$file")) ? self::delTree("$dir/$file") : unlink("$dir/$file");
         }

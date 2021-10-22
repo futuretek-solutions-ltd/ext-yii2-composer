@@ -8,6 +8,7 @@ use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\Installer\PackageEvent;
 use Composer\Installer\PackageEvents;
 use Composer\IO\IOInterface;
+use Composer\Package\Version\VersionParser;
 use Composer\Plugin\PluginInterface;
 use Composer\Script;
 use Composer\Script\ScriptEvents;
@@ -32,12 +33,17 @@ class Plugin implements PluginInterface, EventSubscriberInterface
     private $_vendorDir;
 
     /**
+     * @var Installer
+     */
+    private $_installer;
+
+    /**
      * @inheritdoc
      */
     public function activate(Composer $composer, IOInterface $io)
     {
-        $installer = new Installer($io, $composer);
-        $composer->getInstallationManager()->addInstaller($installer);
+        $this->_installer = new Installer($io, $composer);
+        $composer->getInstallationManager()->addInstaller($this->_installer);
         $this->_vendorDir = rtrim($composer->getConfig()->get('vendor-dir'), '/') . '/';
 
         $this->ensureFile('yiisoft/extensions.php');
@@ -50,14 +56,21 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         $this->ensureFile('futuretek/bootstrap.dev.php');
     }
 
-    protected function ensureFile($file)
+    /**
+     * @inheritdoc
+     */
+    public function deactivate(Composer $composer, IOInterface $io)
     {
-$file = $this->_vendorDir . $file;
-        if (!is_file($file)) {
-            @mkdir(dirname($file), 0777, true);
-            file_put_contents($file, "<?php\n\nreturn [];\n");
-        }
+        $composer->getInstallationManager()->removeInstaller($this->_installer);
     }
+
+    /**
+     * @inheritdoc
+     */
+    public function uninstall(Composer $composer, IOInterface $io)
+    {
+    }
+
 
     /**
      * @inheritdoc
@@ -69,6 +82,15 @@ $file = $this->_vendorDir . $file;
             PackageEvents::POST_PACKAGE_UPDATE => 'checkPackageUpdates',
             ScriptEvents::POST_UPDATE_CMD => 'showUpgradeNotes',
         ];
+    }
+
+    protected function ensureFile($file)
+    {
+        $file = $this->_vendorDir . $file;
+        if (!is_file($file)) {
+            @mkdir(dirname($file), 0777, true);
+            file_put_contents($file, "<?php\n\nreturn [];\n");
+        }
     }
 
     /**
@@ -84,13 +106,31 @@ $file = $this->_vendorDir . $file;
                 'fromPretty' => $operation->getInitialPackage()->getPrettyVersion(),
                 'to' => $operation->getTargetPackage()->getVersion(),
                 'toPretty' => $operation->getTargetPackage()->getPrettyVersion(),
-                'direction' => $event->getPolicy()->versionCompare(
-                    $operation->getInitialPackage(),
-                    $operation->getTargetPackage(),
-                    '<'
-                ) ? 'up' : 'down',
+                'direction' => $this->_isUpgrade($event, $operation) ? 'up' : 'down',
             ];
         }
+    }
+
+    /**
+     * @param PackageEvent $event
+     * @param UpdateOperation $operation
+     * @return bool
+     */
+    private function _isUpgrade(PackageEvent $event, UpdateOperation $operation)
+    {
+        // Composer 1.7.0+
+        if (method_exists('Composer\Package\Version\VersionParser', 'isUpgrade')) {
+            return VersionParser::isUpgrade(
+                $operation->getInitialPackage()->getVersion(),
+                $operation->getTargetPackage()->getVersion()
+            );
+        }
+
+        return $event->getPolicy()->versionCompare(
+            $operation->getInitialPackage(),
+            $operation->getTargetPackage(),
+            '<'
+        );
     }
 
     /**
@@ -198,7 +238,7 @@ $file = $this->_vendorDir . $file;
         $consuming = false;
         // whether an exact match on $fromVersion has been encountered
         $foundExactMatch = false;
-        foreach($lines as $line) {
+        foreach ($lines as $line) {
             if (preg_match('/^Upgrade from Yii ([0-9]\.[0-9]+\.?[0-9\.]*)/i', $line, $matches)) {
                 if ($matches[1] === $fromVersion) {
                     $foundExactMatch = true;
@@ -212,6 +252,7 @@ $file = $this->_vendorDir . $file;
                 $relevantLines[] = $line;
             }
         }
+
         return $relevantLines;
     }
 
@@ -222,6 +263,6 @@ $file = $this->_vendorDir . $file;
      */
     private function isNumericVersion($version)
     {
-        return (bool) preg_match('~^([0-9]\.[0-9]+\.?[0-9\.]*)~', $version);
+        return (bool)preg_match('~^([0-9]\.[0-9]+\.?[0-9\.]*)~', $version);
     }
 }
